@@ -367,9 +367,9 @@ async def run_auto_gpt(
         end_time = datetime.now().timestamp() * 1000
         duration_in_ms = end_time - start_time
 
-        metadata_dir = f"./environment/{workspace}"
+        metadata_dir = f"/app/classic/original_autogpt/environment/{workspace}"
         if not os.path.exists(metadata_dir):
-            os.mkdir(metadata_dir)
+            os.makedirs(metadata_dir, exist_ok=True)
         metadata_path = f"{metadata_dir}/metadata.json"
 
         metadata = {

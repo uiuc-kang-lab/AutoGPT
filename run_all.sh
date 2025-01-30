@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # usage: ./run_all.sh [--one_day]
-for cve in CVE-2024-32986; do
+for cve in CVE-2024-32986 CVE-2024-35187 CVE-2024-5314 CVE-2024-5315; do
 # for cve in $(find benchmark/UIUC/CVE/CVE-2024 -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort); do
     if [[ -d "logs/$cve" ]]; then
         echo "Skipping $cve - already completed"
