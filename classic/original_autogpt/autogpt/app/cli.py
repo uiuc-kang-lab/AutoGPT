@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 import click
+import os
 from forge.logging.config import LogFormatName
 
 from .telemetry import setup_telemetry
@@ -27,6 +28,11 @@ def cli(ctx: click.Context):
     type=int,
     help="Defines the number of times to run in continuous mode",
 )
+@click.option(
+    "--ai-task",
+    type=str,
+    help="Task of the agent to run; if not specified, the user will be prompted to choose one.",
+)
 @click.option("--speak", is_flag=True, help="Enable Speak Mode")
 @click.option(
     "--install-plugin-deps",
@@ -48,6 +54,11 @@ def cli(ctx: click.Context):
     "--ai-name",
     type=str,
     help="AI name override",
+)
+@click.option(
+    "--cve-id",
+    type=str,
+    help="For building workspaces",
 )
 @click.option(
     "--ai-role",
@@ -115,6 +126,21 @@ def cli(ctx: click.Context):
     help="Path to a json configuration file",
     type=click.Path(exists=True, dir_okay=False, resolve_path=True, path_type=Path),
 )
+@click.option(
+    "--smart_llm",
+    help="Smart LLM for the agent",
+    type=str,
+)
+@click.option(
+    "--fast_llm",
+    help="Fast LLM for the agent",
+    type=str,
+)
+@click.option(
+    "--openai_cost_budget",
+    help="OpenAI cost budget for the agent",
+    type=str,
+)
 def run(
     continuous: bool,
     continuous_limit: Optional[int],
@@ -124,6 +150,8 @@ def run(
     skip_reprompt: bool,
     ai_name: Optional[str],
     ai_role: Optional[str],
+    ai_task: Optional[str],
+    cve_id: Optional[str],
     resource: tuple[str],
     constraint: tuple[str],
     best_practice: tuple[str],
@@ -133,6 +161,9 @@ def run(
     log_format: Optional[str],
     log_file_format: Optional[str],
     component_config_file: Optional[Path],
+    smart_llm: str,
+    fast_llm: str,
+    openai_cost_budget: str,
 ) -> None:
     """
     Sets up and runs an agent, based on the task specified by the user, or resumes an
@@ -140,6 +171,10 @@ def run(
     """
     # Put imports inside function to avoid importing everything when starting the CLI
     from autogpt.app.main import run_auto_gpt
+        # Set the VLM, Smart LLM and Fast LLM
+    os.environ["SMART_LLM"] = smart_llm
+    os.environ["FAST_LLM"] = fast_llm
+    os.environ["OPENAI_COST_BUDGET"] = openai_cost_budget
 
     run_auto_gpt(
         continuous=continuous,
@@ -159,6 +194,8 @@ def run(
         best_practices=list(best_practice),
         override_directives=override_directives,
         component_config_file=component_config_file,
+        ai_task=ai_task,
+        workspace=cve_id,
     )
 
 

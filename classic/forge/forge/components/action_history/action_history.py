@@ -18,7 +18,7 @@ from .model import ActionResult, AnyProposal, Episode, EpisodicActionHistory
 class ActionHistoryConfiguration(BaseModel):
     llm_name: ModelName = OpenAIModelName.GPT3
     """Name of the llm model used to compress the history"""
-    max_tokens: int = 1024
+    max_tokens: int = 8192
     """Maximum number of tokens to use up with generated history messages"""
     spacy_language_model: str = "en_core_web_sm"
     """Language model used for summary chunking using spacy"""

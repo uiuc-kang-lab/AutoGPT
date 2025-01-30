@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+start=`date +%s`
+
 function find_python_command() {
     if command -v python3 &> /dev/null
     then
@@ -27,3 +29,12 @@ if $PYTHON_CMD -c "import sys; sys.exit(sys.version_info < (3, 10))"; then
 else
     echo "Python 3.10 or higher is required to run Auto GPT."
 fi
+
+end=`date +%s`
+
+runtime=$((end-start))
+
+echo Total Runtime:
+echo $runtime
+
+curl http://target-container:9091/done 

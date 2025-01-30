@@ -54,13 +54,13 @@ class CodeExecutionError(CommandExecutionError):
 
 
 class CodeExecutorConfiguration(BaseModel):
-    execute_local_commands: bool = False
+    execute_local_commands: bool = True
     """Enable shell command execution"""
-    shell_command_control: Literal["allowlist", "denylist"] = "allowlist"
+    shell_command_control: Literal["allowlist", "denylist"] = "denylist"
     """Controls which list is used"""
     shell_allowlist: list[str] = Field(default_factory=list)
     """List of allowed shell commands"""
-    shell_denylist: list[str] = Field(default_factory=list)
+    shell_denylist: list[str] = []
     """List of prohibited shell commands"""
     docker_container_name: str = "agent_sandbox"
     """Name of the Docker container used for code execution"""
@@ -239,6 +239,10 @@ class CodeExecutorComponent(
             return False, False
 
         command_name = shlex.split(command_line)[0]
+
+        # ban this command because it crashes AutoGPT
+        if command_line == "python3 -m http.server 8000 --directory .":
+            return False, False
 
         if self.config.shell_command_control == "allowlist":
             return command_name in self.config.shell_allowlist, False

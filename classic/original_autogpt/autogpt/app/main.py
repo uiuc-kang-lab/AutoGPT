@@ -9,6 +9,8 @@ import os
 import re
 import signal
 import sys
+import subprocess
+import json
 from pathlib import Path
 from types import FrameType
 from typing import TYPE_CHECKING, Optional
@@ -55,7 +57,6 @@ from .utils import (
     print_python_version_info,
 )
 
-
 @coroutine
 async def run_auto_gpt(
     continuous: bool = False,
@@ -75,6 +76,8 @@ async def run_auto_gpt(
     best_practices: Optional[list[str]] = None,
     override_directives: bool = False,
     component_config_file: Optional[Path] = None,
+    ai_task: Optional[str] = None,
+    workspace: Optional[str] = None,
 ):
     # Set up configuration
     config = ConfigBuilder.build_config_from_env()
@@ -245,12 +248,15 @@ async def run_auto_gpt(
     # Set up a new Agent #
     ######################
     if not agent:
-        task = ""
-        while task.strip() == "":
-            task = clean_input(
-                "Enter the task that you want AutoGPT to execute,"
-                " with as much detail as possible:",
-            )
+        if ai_task is None:
+            task = ""
+            while task.strip() == "":
+                task = clean_input(
+                    "Enter the task that you want AutoGPT to execute,"
+                    " with as much detail as possible:",
+                )
+        else:
+            task = ai_task.strip()
 
         ai_profile = AIProfile()
         additional_ai_directives = AIDirectives()
@@ -287,8 +293,11 @@ async def run_auto_gpt(
         else:
             logger.info("AI config overrides specified through CLI; skipping revision")
 
+        if workspace is None:
+            workspace = agent_manager.generate_id(ai_profile.ai_name)
+
         agent = create_agent(
-            agent_id=agent_manager.generate_id(ai_profile.ai_name),
+            agent_id=workspace,
             task=task,
             ai_profile=ai_profile,
             directives=additional_ai_directives,
@@ -335,7 +344,9 @@ async def run_auto_gpt(
     # Run the Agent #
     #################
     try:
-        await run_interaction_loop(agent)
+        cost_log = f"./environment/{workspace}/cost.json"
+        cost_dir = f"./environment/{workspace}"
+        await run_interaction_loop(agent, cost_log_path=cost_log, cost_log_dir=cost_dir)
     except AgentTerminated:
         agent_id = agent.state.agent_id
         logger.info(f"Saving state of {agent_id}...")
@@ -350,6 +361,30 @@ async def run_auto_gpt(
             save_as_id.strip() if not save_as_id.isspace() else None
         )
 
+    task_total_cost = agent.llm_provider.get_incurred_cost()
+    input_tokens = agent.llm_provider._settings.budget.usage.prompt_tokens
+    output_tokens = agent.llm_provider._settings.budget.usage.completion_tokens
+    if task_total_cost > 0:
+        logger.info(
+            f"Total LLM cost for task {workspace}: "
+            f"${round(task_total_cost, 2)}"            
+        )
+        with open(cost_log, 'r') as file:
+            costs = json.load(file)
+        costs.append(task_total_cost)
+        with open(cost_log, 'w') as file:
+            json.dump(costs, file) 
+        logger.info(
+            f"Total input tokens used: {input_tokens}"
+        )
+        logger.info(
+            f"Total output tokens received: {output_tokens}"
+        )
+    budget = float(os.environ.get("OPENAI_COST_BUDGET"))
+    if task_total_cost > budget:
+        logger.info(
+            f"Task {workspace} exceeds budget limit!"
+        )
 
 @coroutine
 async def run_auto_gpt_server(
@@ -440,6 +475,8 @@ class UserFeedback(str, enum.Enum):
 
 async def run_interaction_loop(
     agent: "Agent",
+    cost_log_path: str,
+    cost_log_dir: str,
 ) -> None:
     """Run the main interaction loop for the agent.
 
@@ -498,6 +535,10 @@ async def run_interaction_loop(
 
     # Keep track of consecutive failures of the agent
     consecutive_failures = 0
+
+    costs = []
+    commands = 0
+    iterations = 0
 
     while cycles_remaining > 0:
         logger.debug(f"Cycle budget: {cycle_budget}; remaining: {cycles_remaining}")
@@ -614,7 +655,37 @@ async def run_interaction_loop(
                 f"Command {action_proposal.use_tool.name} returned an error: "
                 f"{result.error or result.reason}"
             )
+    
+        task_total_cost = agent.llm_provider.get_incurred_cost()
+        input_tokens = agent.llm_provider._settings.budget.usage.prompt_tokens
+        output_tokens = agent.llm_provider._settings.budget.usage.completion_tokens
+        if task_total_cost > 0:
+            logger.info(
+                f"Total LLM cost for task: "
+                f"${round(task_total_cost, 2)}"
+            )
+            logger.info(
+                f"Total input tokens used: {input_tokens}"
+            )
+            logger.info(
+                f"Total output tokens received: {output_tokens}"
+            )
+            costs.append(task_total_cost)
 
+            if not os.path.exists("./environment"):
+                os.mkdir("./environment")
+
+            if not os.path.exists(cost_log_dir):
+                os.mkdir(cost_log_dir)
+                
+            with open(cost_log_path, 'w') as file:
+                json.dump(costs, file)
+        budget = float(os.environ.get("OPENAI_COST_BUDGET"))
+        if iterations > 30:
+            break
+        iterations += 1
+        if task_total_cost > budget:
+            break
 
 def update_user(
     ai_profile: AIProfile,
