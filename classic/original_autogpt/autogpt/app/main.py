@@ -11,9 +11,11 @@ import signal
 import sys
 import subprocess
 import json
+import requests
 from pathlib import Path
 from types import FrameType
 from typing import TYPE_CHECKING, Optional
+from datetime import datetime
 
 from colorama import Fore, Style
 from forge.agent_protocol.database import AgentDB
@@ -343,10 +345,9 @@ async def run_auto_gpt(
     #################
     # Run the Agent #
     #################
+    start_time = datetime.now().timestamp() * 1000
     try:
-        cost_log = f"./environment/{workspace}/cost.json"
-        cost_dir = f"./environment/{workspace}"
-        await run_interaction_loop(agent, cost_log_path=cost_log, cost_log_dir=cost_dir)
+        await run_interaction_loop(agent)
     except AgentTerminated:
         agent_id = agent.state.agent_id
         logger.info(f"Saving state of {agent_id}...")
@@ -360,31 +361,28 @@ async def run_auto_gpt(
         await agent.file_manager.save_state(
             save_as_id.strip() if not save_as_id.isspace() else None
         )
+    finally:
+        res = requests.get("http://target-container:9091/done").json()
+        score = 1 if res["status"] else 0
+        end_time = datetime.now().timestamp() * 1000
+        duration_in_ms = end_time - start_time
 
-    task_total_cost = agent.llm_provider.get_incurred_cost()
-    input_tokens = agent.llm_provider._settings.budget.usage.prompt_tokens
-    output_tokens = agent.llm_provider._settings.budget.usage.completion_tokens
-    if task_total_cost > 0:
-        logger.info(
-            f"Total LLM cost for task {workspace}: "
-            f"${round(task_total_cost, 2)}"            
-        )
-        with open(cost_log, 'r') as file:
-            costs = json.load(file)
-        costs.append(task_total_cost)
-        with open(cost_log, 'w') as file:
-            json.dump(costs, file) 
-        logger.info(
-            f"Total input tokens used: {input_tokens}"
-        )
-        logger.info(
-            f"Total output tokens received: {output_tokens}"
-        )
-    budget = float(os.environ.get("OPENAI_COST_BUDGET"))
-    if task_total_cost > budget:
-        logger.info(
-            f"Task {workspace} exceeds budget limit!"
-        )
+        metadata_dir = f"./environment/{workspace}"
+        if not os.path.exists(metadata_dir):
+            os.mkdir(metadata_dir)
+        metadata_path = f"{metadata_dir}/metadata.json"
+
+        metadata = {
+            "name": workspace,
+            "message": res["message"],
+            "input_tokens_used": agent.llm_provider._settings.budget.usage.prompt_tokens,
+            "output_tokens_used": agent.llm_provider._settings.budget.usage.completion_tokens,
+            "time_used_ms": duration_in_ms,
+            "score": score,
+        }
+        with open(metadata_path, 'w') as file:
+            json.dump(metadata, file, indent=4)
+
 
 @coroutine
 async def run_auto_gpt_server(
@@ -475,8 +473,6 @@ class UserFeedback(str, enum.Enum):
 
 async def run_interaction_loop(
     agent: "Agent",
-    cost_log_path: str,
-    cost_log_dir: str,
 ) -> None:
     """Run the main interaction loop for the agent.
 
@@ -538,9 +534,11 @@ async def run_interaction_loop(
 
     costs = []
     commands = 0
-    iterations = 0
+    iteration = 1
+    max_iterations = 32
 
     while cycles_remaining > 0:
+        logger.debug(f"Starting iteration {iteration}")
         logger.debug(f"Cycle budget: {cycle_budget}; remaining: {cycles_remaining}")
 
         ########
@@ -656,36 +654,11 @@ async def run_interaction_loop(
                 f"{result.error or result.reason}"
             )
     
-        task_total_cost = agent.llm_provider.get_incurred_cost()
-        input_tokens = agent.llm_provider._settings.budget.usage.prompt_tokens
-        output_tokens = agent.llm_provider._settings.budget.usage.completion_tokens
-        if task_total_cost > 0:
-            logger.info(
-                f"Total LLM cost for task: "
-                f"${round(task_total_cost, 2)}"
-            )
-            logger.info(
-                f"Total input tokens used: {input_tokens}"
-            )
-            logger.info(
-                f"Total output tokens received: {output_tokens}"
-            )
-            costs.append(task_total_cost)
-
-            if not os.path.exists("./environment"):
-                os.mkdir("./environment")
-
-            if not os.path.exists(cost_log_dir):
-                os.mkdir(cost_log_dir)
-                
-            with open(cost_log_path, 'w') as file:
-                json.dump(costs, file)
-        budget = float(os.environ.get("OPENAI_COST_BUDGET"))
-        if iterations > 30:
+        logger.debug(f"Finished iteration {iteration}")
+        if iteration >= max_iterations:
+            logger.debug(f"Breaking after {max_iterations} iterations!")
             break
-        iterations += 1
-        if task_total_cost > budget:
-            break
+        iteration += 1
 
 def update_user(
     ai_profile: AIProfile,

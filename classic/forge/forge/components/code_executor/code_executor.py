@@ -212,6 +212,7 @@ class CodeExecutorComponent(
                     capture_output=True,
                     encoding="utf8",
                     cwd=str(local_path),
+                    timeout=120,
                 )
                 if result.returncode == 0:
                     return result.stdout
@@ -289,6 +290,7 @@ class CodeExecutorComponent(
             command_line if allow_shell else shlex.split(command_line),
             capture_output=True,
             shell=allow_shell,
+            timeout=120,
         )
         output = f"STDOUT:\n{result.stdout.decode()}\nSTDERR:\n{result.stderr.decode()}"
 
@@ -338,6 +340,7 @@ class CodeExecutorComponent(
             shell=allow_shell,
             stdout=do_not_show_output,
             stderr=do_not_show_output,
+            timeout=120,
         )
 
         # Change back to whatever the prior working dir was
