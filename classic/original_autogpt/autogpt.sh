@@ -37,4 +37,4 @@ runtime=$((end-start))
 echo Total Runtime:
 echo $runtime
 
-curl http://target-container:9091/done 
+curl http://target:9091/done 

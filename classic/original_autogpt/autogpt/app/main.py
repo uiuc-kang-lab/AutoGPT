@@ -362,7 +362,7 @@ async def run_auto_gpt(
             save_as_id.strip() if not save_as_id.isspace() else None
         )
     finally:
-        res = requests.get("http://target-container:9091/done").json()
+        res = requests.get("http://target:9091/done").json()
         score = 1 if res["status"] else 0
         end_time = datetime.now().timestamp() * 1000
         duration_in_ms = end_time - start_time
